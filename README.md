@@ -24,21 +24,21 @@ You can use the script in two ways:
 
 ```bash
 # Test with first 5 rows, dry run mode, save debug images
-python3 unified_image_processor.py --test-mode --test-rows 5 --dry-run --debug-save
+python3 main.py --test-mode --test-rows 5 --dry-run --debug-save
 ```
 
 #### 2. Dry Run (Full Dataset, No Upload)
 
 ```bash
 # Process all rows, simulate upload only
-python3 unified_image_processor.py --dry-run --no-test-mode
+python3 main.py --dry-run --no-test-mode
 ```
 
 #### 3. Production Run (Actual Upload)
 
 ```bash
 # PRODUCTION: Actually upload images to S3
-python3 unified_image_processor.py --no-dry-run --no-test-mode
+python3 main.py --no-dry-run --no-test-mode
 # Script will ask for confirmation: Type 'CONFIRM UPLOAD'
 ```
 
@@ -46,7 +46,7 @@ python3 unified_image_processor.py --no-dry-run --no-test-mode
 
 ```bash
 # Use different files and settings
-python3 unified_image_processor.py \
+python3 main.py \
   --input "my-images.csv" \
   --output "results.csv" \
   --bucket-name "my-bucket" \
@@ -58,36 +58,36 @@ python3 unified_image_processor.py \
 
 ```bash
 # Edit config.py first, then run:
-python3 unified_image_processor.py
+python3 main.py
 ```
 
 ### Get Help
 
 ```bash
 # See all available options
-python3 unified_image_processor.py --help
+python3 main.py --help
 ```
 
 ## Common CLI Usage Examples
 
 ```bash
 # Test mode: Process first 3 rows only, dry run
-python3 unified_image_processor.py --test-mode --test-rows 3
+python3 main.py --test-mode --test-rows 3
 
 # Dry run with different input file
-python3 unified_image_processor.py --input "another-file.csv" --dry-run
+python3 main.py --input "another-file.csv" --dry-run
 
 # Production upload with different bucket
-python3 unified_image_processor.py --no-dry-run --bucket-name "my-new-bucket"
+python3 main.py --no-dry-run --bucket-name "my-new-bucket"
 
 # Debug mode: Save processed images locally
-python3 unified_image_processor.py --test-mode --debug-save --debug-dir "my-debug-folder"
+python3 main.py --test-mode --debug-save --debug-dir "my-debug-folder"
 
 # Different image dimensions
-python3 unified_image_processor.py --target-width 800 --target-height 600 --dry-run
+python3 main.py --target-width 800 --target-height 600 --dry-run
 
 # Quick test with custom output
-python3 unified_image_processor.py --test-mode --test-rows 1 --output "quick-test.csv"
+python3 main.py --test-mode --test-rows 1 --output "quick-test.csv"
 ```
 
 ## Configuration Options
@@ -208,7 +208,7 @@ Install via: `pip install -r requirements.txt`
 ## File Structure After Running
 
 ```
-├── unified_image_processor.py      # Main script
+├── main.py      # Main script
 ├── config.py                       # Configuration
 ├── yuhila - missing images.csv     # Input data
 ├── yuhila - missing images - processed.csv  # Results

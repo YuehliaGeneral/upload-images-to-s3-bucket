@@ -1,4 +1,4 @@
-# Default configuration for unified_image_processor.py
+# Default configuration for main.py
 # These values can be overridden by command line arguments
 # Use --help to see available CLI options
 
@@ -24,7 +24,7 @@ TEST_MODE = False  # Default to process all rows - use --test-mode for testing
 TEST_ROWS = 5  # Number of rows to process in test mode
 
 # CLI Examples:
-# python3 unified_image_processor.py --help
-# python3 unified_image_processor.py --test-mode --test-rows 10
-# python3 unified_image_processor.py --no-dry-run --input "my-file.csv" 
-# python3 unified_image_processor.py --debug-save --bucket-name "my-bucket" 
+# python3 main.py --help
+# python3 main.py --test-mode --test-rows 10
+# python3 main.py --no-dry-run --input "my-file.csv" 
+# python3 main.py --debug-save --bucket-name "my-bucket" 
