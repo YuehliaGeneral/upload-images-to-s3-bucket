@@ -14,7 +14,7 @@ import boto3
 import logging
 from datetime import datetime
 from tqdm import tqdm
-from urllib.parse import urlparse
+from urllib.parse import urlparse, unquote, quote
 from typing import Optional, Tuple
 import argparse
 
@@ -232,42 +232,66 @@ def generate_s3_key(original_url: str) -> str:
         raise
 
 
-def check_s3_object_exists_and_accessible(s3_key: str) -> Tuple[bool, int, str]:
+def check_s3_object_exists_and_accessible(s3_key: str) -> Tuple[bool, int, str, str]:
     """Check if object exists in S3 bucket and is accessible.
+    Tries multiple URL encoding variations to handle encoding mismatches.
     
     Returns:
-        Tuple of (needs_upload, status_code, status_message)
+        Tuple of (needs_upload, status_code, status_message, actual_s3_key_found)
     """
-    try:
-        # First check if object exists
-        s3.head_object(Bucket=BUCKET_NAME, Key=s3_key)
-        
-        # If exists, test actual accessibility by trying to access the URL
-        s3_url = f"https://{BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{s3_key}"
-        response = requests.head(s3_url, timeout=10)
-        
-        if response.status_code == 200:
-            return False, 200, "EXISTS_ACCESSIBLE"
-        elif response.status_code == 403:
-            logger.warning(f"S3 object {s3_key} exists but returns 403 - will re-upload")
-            return True, 403, "EXISTS_403_REUPLOAD"
-        else:
-            logger.warning(f"S3 object {s3_key} exists but returns {response.status_code} - will re-upload")
-            return True, response.status_code, f"EXISTS_{response.status_code}_REUPLOAD"
+    # Generate different encoding variations to try
+    s3_key_variations = [
+        s3_key,                    # Original key as-is
+        unquote(s3_key),          # URL-decoded version  
+        quote(s3_key, safe='/')   # URL-encoded version (preserve forward slashes)
+    ]
+    
+    # Remove duplicates while preserving order
+    seen = set()
+    unique_variations = []
+    for key in s3_key_variations:
+        if key not in seen:
+            seen.add(key)
+            unique_variations.append(key)
+    
+    # Try each variation
+    for attempt_key in unique_variations:
+        try:
+            # First check if object exists in S3
+            s3.head_object(Bucket=BUCKET_NAME, Key=attempt_key)
             
-    except s3.exceptions.ClientError as e:
-        error_code = int(e.response['Error']['Code'])
-        if error_code == 404:
-            return True, 404, "NOT_EXISTS"
-        else:
-            logger.error(f"Unexpected S3 error for key {s3_key}: {e}")
-            return True, error_code, f"S3_ERROR_{error_code}"
-    except requests.RequestException as e:
-        logger.error(f"Error testing accessibility of {s3_key}: {e}")
-        return True, 0, f"ACCESS_TEST_ERROR"
-    except Exception as e:
-        logger.error(f"Error checking S3 object {s3_key}: {e}")
-        return True, 0, f"UNKNOWN_ERROR"
+            # If exists, test actual accessibility by trying to access the URL
+            s3_url = f"https://{BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{quote(attempt_key, safe='/')}"
+            response = requests.head(s3_url, timeout=10)
+            
+            if response.status_code == 200:
+                if attempt_key != s3_key:
+                    logger.info(f"Found S3 object with different encoding: '{attempt_key}' (instead of '{s3_key}')")
+                return False, 200, "EXISTS_ACCESSIBLE", attempt_key
+            elif response.status_code == 403:
+                logger.warning(f"S3 object {attempt_key} exists but returns 403 - will re-upload")
+                return True, 403, "EXISTS_403_REUPLOAD", attempt_key
+            else:
+                logger.warning(f"S3 object {attempt_key} exists but returns {response.status_code} - will re-upload")
+                return True, response.status_code, f"EXISTS_{response.status_code}_REUPLOAD", attempt_key
+                
+        except s3.exceptions.ClientError as e:
+            error_code = int(e.response['Error']['Code'])
+            if error_code == 404:
+                # Try next variation
+                continue
+            else:
+                logger.error(f"Unexpected S3 error for key {attempt_key}: {e}")
+                return True, error_code, f"S3_ERROR_{error_code}", attempt_key
+        except requests.RequestException as e:
+            logger.error(f"Error testing accessibility of {attempt_key}: {e}")
+            return True, 0, f"ACCESS_TEST_ERROR", attempt_key
+        except Exception as e:
+            logger.error(f"Error checking S3 object {attempt_key}: {e}")
+            return True, 0, f"UNKNOWN_ERROR", attempt_key
+    
+    # None of the variations were found
+    return True, 404, "NOT_EXISTS", s3_key
 
 
 def center_crop_image(img: Image.Image, target_width: int, target_height: int) -> Image.Image:
@@ -341,39 +365,45 @@ def process_single_image(url: str, row_index: int) -> Tuple[str, str, str, int]:
         s3_url = f"https://{BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{s3_key}"
         
         # Check if exists and is accessible
-        needs_upload, status_code, check_status = check_s3_object_exists_and_accessible(s3_key)
+        needs_upload, status_code, check_status, actual_s3_key = check_s3_object_exists_and_accessible(s3_key)
         
         if not needs_upload:
-            logger.info(f"Row {row_index}: Image exists and accessible (HTTP {status_code}) - {s3_key}")
-            return s3_key, "EXISTS_OK", s3_url, status_code
+            # Use the actual key that was found (might have different encoding)
+            actual_s3_url = f"https://{BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{quote(actual_s3_key, safe='/')}"
+            logger.info(f"Row {row_index}: Image exists and accessible (HTTP {status_code}) - {actual_s3_key}")
+            return actual_s3_key, "EXISTS_OK", actual_s3_url, status_code
+        
+        # Use the actual key that was found for upload (handles encoding issues)
+        upload_s3_key = actual_s3_key
+        upload_s3_url = f"https://{BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{quote(upload_s3_key, safe='/')}"
         
         # Log why we need to upload
         if check_status.startswith("EXISTS_403"):
-            logger.info(f"Row {row_index}: Image exists but 403 forbidden (HTTP {status_code}) - will re-upload - {s3_key}")
+            logger.info(f"Row {row_index}: Image exists but 403 forbidden (HTTP {status_code}) - will re-upload - {upload_s3_key}")
         elif check_status.startswith("EXISTS_"):
-            logger.info(f"Row {row_index}: Image exists but HTTP {status_code} - will re-upload - {s3_key}")
+            logger.info(f"Row {row_index}: Image exists but HTTP {status_code} - will re-upload - {upload_s3_key}")
         elif check_status == "NOT_EXISTS":
-            logger.info(f"Row {row_index}: Image not found (HTTP 404) - will upload - {s3_key}")
+            logger.info(f"Row {row_index}: Image not found (HTTP 404) - will upload - {upload_s3_key}")
         else:
-            logger.info(f"Row {row_index}: {check_status} - will upload - {s3_key}")
+            logger.info(f"Row {row_index}: {check_status} - will upload - {upload_s3_key}")
         
         if DRY_RUN:
-            logger.info(f"Row {row_index}: [DRY RUN] Would upload - {s3_key}")
-            return s3_key, f"WOULD_UPLOAD_{check_status}", s3_url, status_code
+            logger.info(f"Row {row_index}: [DRY RUN] Would upload - {upload_s3_key}")
+            return upload_s3_key, f"WOULD_UPLOAD_{check_status}", upload_s3_url, status_code
         
         # Process and upload image
-        debug_filename = os.path.basename(s3_key) if DEBUG_SAVE else None
+        debug_filename = os.path.basename(upload_s3_key) if DEBUG_SAVE else None
         image_buffer = process_image_from_url(url, debug_filename)
-        upload_result = upload_to_s3(image_buffer, s3_key)
+        upload_result = upload_to_s3(image_buffer, upload_s3_key)
         
         # Verify upload worked by checking again
-        verify_needs_upload, verify_status_code, verify_status = check_s3_object_exists_and_accessible(s3_key)
+        verify_needs_upload, verify_status_code, verify_status, verify_actual_key = check_s3_object_exists_and_accessible(upload_s3_key)
         if not verify_needs_upload and verify_status_code == 200:
-            logger.info(f"Row {row_index}: Successfully uploaded and verified (HTTP {verify_status_code}) - {s3_key}")
-            return s3_key, "UPLOADED_OK", s3_url, verify_status_code
+            logger.info(f"Row {row_index}: Successfully uploaded and verified (HTTP {verify_status_code}) - {upload_s3_key}")
+            return upload_s3_key, "UPLOADED_OK", upload_s3_url, verify_status_code
         else:
-            logger.warning(f"Row {row_index}: Upload completed but verification failed (HTTP {verify_status_code}) - {s3_key}")
-            return s3_key, f"UPLOADED_VERIFY_FAIL_{verify_status_code}", s3_url, verify_status_code
+            logger.warning(f"Row {row_index}: Upload completed but verification failed (HTTP {verify_status_code}) - {upload_s3_key}")
+            return upload_s3_key, f"UPLOADED_VERIFY_FAIL_{verify_status_code}", upload_s3_url, verify_status_code
         
     except Exception as e:
         logger.error(f"Row {row_index}: Failed to process {url} - {e}")
