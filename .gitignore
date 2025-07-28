@@ -1,0 +1,6 @@
+logs/
+debug_images/
+env/
+.env
+*.csv
+.DS_Store
