@@ -4,3 +4,5 @@ env/
 .env
 *.csv
 .DS_Store
+original_image_backups/
+__pycache__/

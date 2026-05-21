@@ -58,7 +58,7 @@ class CSVHandler:
         Returns:
             Column name if found, None otherwise
         """
-        possible_columns = ['WOO IMAGE', 's3_url', 'image_url', 'url']
+        possible_columns = ['thumbnail_url_bucket', 'WOO IMAGE', 's3_url', 'image_url', 'url']
         
         for col in possible_columns:
             if col in df.columns:
@@ -94,11 +94,28 @@ class CSVHandler:
         df['S3_Key'] = ""
         df['Processing_Status'] = ""
         df['HTTP_Response_Code'] = ""
+        df['Applied_Target_Width'] = ""
+        df['Applied_Target_Height'] = ""
         
         if result_column not in df.columns:
             df[result_column] = ""
         
         return df
+
+    def get_row_target_dimensions(self, row: pd.Series) -> Tuple[int, int]:
+        """Return row-specific target dimensions, falling back to config defaults."""
+        target_width = self.config.target_width
+        target_height = self.config.target_height
+
+        if 'target_width' in row and pd.notna(row['target_width']):
+            target_width = int(row['target_width'])
+        if 'target_height' in row and pd.notna(row['target_height']):
+            target_height = int(row['target_height'])
+
+        if target_width <= 0 or target_height <= 0:
+            raise ValueError(f"Invalid target dimensions: {target_width}x{target_height}")
+
+        return target_width, target_height
     
     def load_data(self) -> Tuple[pd.DataFrame, str, str]:
         """Load CSV data and determine column mappings.

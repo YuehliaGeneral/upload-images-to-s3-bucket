@@ -3,19 +3,23 @@
 # Use --help to see available CLI options
 
 # Input/Output files
-INPUT_CSV = 'yuhila - missing images.csv'
-OUTPUT_CSV = 'yuhila - missing images - processed.csv'
+INPUT_CSV = 'export.csv'
+OUTPUT_CSV = 'export-processed.csv'
 
 # AWS S3 Settings
-BUCKET_NAME = 'deliveroo-bucket-yjh5p6'
+BUCKET_NAME = 'bucket-p67ztf'
 AWS_REGION = 'ap-south-1'
 
 # Image Processing Settings
-TARGET_WIDTH = 1200
-TARGET_HEIGHT = 800
+# Rows with target_width/target_height columns override these defaults.
+TARGET_WIDTH = 768
+TARGET_HEIGHT = 768
 
 # Safety Settings (DEFAULTS - can override with CLI)
 DRY_RUN = True  # Default to safe mode - use --no-dry-run to upload
+OVERWRITE_EXISTING = True  # Reprocess and upload even when the S3 object already exists
+BACKUP_ORIGINALS = True  # Save downloaded original images locally before processing
+BACKUP_DIR = 'original_image_backups'
 DEBUG_SAVE = False  # Set to True to save processed images locally
 DEBUG_DIR = 'debug_images'
 

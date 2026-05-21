@@ -26,6 +26,9 @@ class Config:
     
     # Mode settings
     dry_run: bool
+    overwrite_existing: bool
+    backup_originals: bool
+    backup_dir: str
     debug_save: bool
     debug_dir: str
     test_mode: bool
@@ -49,6 +52,9 @@ def get_config() -> Config:
             TARGET_WIDTH as default_target_width,
             TARGET_HEIGHT as default_target_height,
             DRY_RUN as default_dry_run,
+            OVERWRITE_EXISTING as default_overwrite_existing,
+            BACKUP_ORIGINALS as default_backup_originals,
+            BACKUP_DIR as default_backup_dir,
             DEBUG_SAVE as default_debug_save,
             DEBUG_DIR as default_debug_dir,
             TEST_MODE as default_test_mode,
@@ -64,6 +70,9 @@ def get_config() -> Config:
         default_target_width = 1200
         default_target_height = 800
         default_dry_run = True
+        default_overwrite_existing = False
+        default_backup_originals = False
+        default_backup_dir = 'original_image_backups'
         default_debug_save = False
         default_debug_dir = 'debug_images'
         default_test_mode = False
@@ -103,6 +112,26 @@ def get_config() -> Config:
     mode_group.add_argument('--no-dry-run', '--upload', action='store_false',
                            dest='dry_run',
                            help='Actually upload images to S3 (PRODUCTION MODE)')
+
+    overwrite_group = parser.add_mutually_exclusive_group()
+    overwrite_group.add_argument('--overwrite-existing', action='store_true',
+                                 default=default_overwrite_existing,
+                                 help='Reprocess and upload even when the S3 object already exists')
+    overwrite_group.add_argument('--skip-existing', action='store_false',
+                                 dest='overwrite_existing',
+                                 help='Skip S3 objects that already exist and are accessible')
+
+    backup_group = parser.add_mutually_exclusive_group()
+    backup_group.add_argument('--backup-originals', action='store_true',
+                              default=default_backup_originals,
+                              help='Save downloaded original images locally before processing')
+    backup_group.add_argument('--no-backup-originals', action='store_false',
+                              dest='backup_originals',
+                              help='Do not save downloaded original images locally')
+
+    parser.add_argument('--backup-dir',
+                       default=default_backup_dir,
+                       help=f'Directory for original image backups (default: {default_backup_dir})')
     
     # Test mode arguments
     test_group = parser.add_mutually_exclusive_group()
@@ -141,6 +170,9 @@ def get_config() -> Config:
     
     # Print current settings
     print(f"⚠️  DRY_RUN mode: {args.dry_run}")
+    print(f"🔁 OVERWRITE_EXISTING mode: {args.overwrite_existing}")
+    if args.backup_originals:
+        print(f"📦 BACKUP_ORIGINALS enabled: Will save originals to {args.backup_dir}")
     if args.test_mode:
         print(f"🧪 TEST_MODE enabled: Will process only {args.test_rows} rows")
     if args.debug_save:
@@ -155,6 +187,9 @@ def get_config() -> Config:
         target_width=args.target_width,
         target_height=args.target_height,
         dry_run=args.dry_run,
+        overwrite_existing=args.overwrite_existing,
+        backup_originals=args.backup_originals,
+        backup_dir=args.backup_dir,
         debug_save=args.debug_save,
         debug_dir=args.debug_dir,
         test_mode=args.test_mode,

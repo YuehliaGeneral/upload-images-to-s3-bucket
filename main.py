@@ -41,8 +41,16 @@ def setup_logging(config) -> logging.Logger:
     return logger
 
 
-def process_single_image(url: str, row_index: int, image_processor: ImageProcessor, 
-                        s3_handler: S3Handler, config, logger: logging.Logger) -> Tuple[str, str, str, int]:
+def process_single_image(
+    url: str,
+    row_index: int,
+    image_processor: ImageProcessor,
+    s3_handler: S3Handler,
+    config,
+    logger: logging.Logger,
+    target_width: int,
+    target_height: int
+) -> Tuple[str, str, str, int]:
     """Process a single image: check existence/accessibility and upload if needed.
     
     Args:
@@ -64,7 +72,7 @@ def process_single_image(url: str, row_index: int, image_processor: ImageProcess
         # Check if exists and is accessible
         needs_upload, status_code, check_status, actual_s3_key = s3_handler.check_s3_object_exists_and_accessible(s3_key)
         
-        if not needs_upload:
+        if not needs_upload and not config.overwrite_existing:
             # Use the actual key that was found (might have different encoding)
             actual_s3_url = s3_handler.get_s3_url(actual_s3_key)
             logger.info(f"Row {row_index}: Image exists and accessible (HTTP {status_code}) - {actual_s3_key}")
@@ -75,7 +83,12 @@ def process_single_image(url: str, row_index: int, image_processor: ImageProcess
         upload_s3_url = s3_handler.get_s3_url(upload_s3_key)
         
         # Log why we need to upload
-        if check_status.startswith("EXISTS_403"):
+        if not needs_upload and config.overwrite_existing:
+            logger.info(
+                f"Row {row_index}: Image exists and accessible but overwrite is enabled "
+                f"- will reprocess to {target_width}x{target_height} and upload - {upload_s3_key}"
+            )
+        elif check_status.startswith("EXISTS_403"):
             logger.info(f"Row {row_index}: Image exists but 403 forbidden (HTTP {status_code}) - will re-upload - {upload_s3_key}")
         elif check_status.startswith("EXISTS_"):
             logger.info(f"Row {row_index}: Image exists but HTTP {status_code} - will re-upload - {upload_s3_key}")
@@ -86,18 +99,36 @@ def process_single_image(url: str, row_index: int, image_processor: ImageProcess
         
         if config.dry_run:
             logger.info(f"Row {row_index}: [DRY RUN] Would upload - {upload_s3_key}")
+            if config.debug_save or config.backup_originals:
+                debug_filename = os.path.basename(upload_s3_key)
+                image_processor.process_image_from_url(
+                    url,
+                    debug_filename if config.debug_save else None,
+                    backup_filename=upload_s3_key,
+                    target_width=target_width,
+                    target_height=target_height
+                )
+            if not needs_upload and config.overwrite_existing:
+                return upload_s3_key, "WOULD_OVERWRITE_EXISTS_ACCESSIBLE", upload_s3_url, status_code
             return upload_s3_key, f"WOULD_UPLOAD_{check_status}", upload_s3_url, status_code
         
         # Process and upload image
         debug_filename = os.path.basename(upload_s3_key) if config.debug_save else None
-        image_buffer = image_processor.process_image_from_url(url, debug_filename)
+        image_buffer = image_processor.process_image_from_url(
+            url,
+            debug_filename,
+            backup_filename=upload_s3_key,
+            target_width=target_width,
+            target_height=target_height
+        )
         upload_result = s3_handler.upload_to_s3(image_buffer, upload_s3_key)
         
         # Verify upload worked by checking again
         verify_needs_upload, verify_status_code, verify_status, verify_actual_key = s3_handler.check_s3_object_exists_and_accessible(upload_s3_key)
         if not verify_needs_upload and verify_status_code == 200:
             logger.info(f"Row {row_index}: Successfully uploaded and verified (HTTP {verify_status_code}) - {upload_s3_key}")
-            return upload_s3_key, "UPLOADED_OK", upload_s3_url, verify_status_code
+            status = "OVERWRITTEN_OK" if not needs_upload and config.overwrite_existing else "UPLOADED_OK"
+            return upload_s3_key, status, upload_s3_url, verify_status_code
         else:
             logger.warning(f"Row {row_index}: Upload completed but verification failed (HTTP {verify_status_code}) - {upload_s3_key}")
             return upload_s3_key, f"UPLOADED_VERIFY_FAIL_{verify_status_code}", upload_s3_url, verify_status_code
@@ -114,6 +145,8 @@ def confirm_production_run(config, logger: logging.Logger) -> bool:
         print("⚠️  WARNING: PRODUCTION MODE ENABLED")
         print("="*60)
         print("This will ACTUALLY UPLOAD images to S3!")
+        if config.overwrite_existing:
+            print("Existing objects with matching keys will be overwritten.")
         print(f"Bucket: {config.bucket_name}")
         print(f"CSV file: {config.input_csv}")
         print("This action cannot be undone.")
@@ -146,6 +179,8 @@ def main():
     logger.info(f"S3 Bucket: {config.bucket_name}")
     logger.info(f"Target Dimensions: {config.target_width}x{config.target_height}")
     logger.info(f"Dry Run Mode: {config.dry_run}")
+    logger.info(f"Overwrite Existing: {config.overwrite_existing}")
+    logger.info(f"Backup Originals: {config.backup_originals}")
     logger.info(f"Debug Save: {config.debug_save}")
     logger.info(f"Test Mode: {config.test_mode}")
     if config.test_mode:
@@ -191,21 +226,33 @@ def main():
             continue
         
         try:
+            target_width, target_height = csv_handler.get_row_target_dimensions(row)
             s3_key, status, s3_url, response_code = process_single_image(
-                url, index + 1, image_processor, s3_handler, config, logger
+                url,
+                index + 1,
+                image_processor,
+                s3_handler,
+                config,
+                logger,
+                target_width,
+                target_height
             )
             
             df.at[index, 'S3_Key'] = s3_key
             df.at[index, 'Processing_Status'] = status
             df.at[index, 'HTTP_Response_Code'] = response_code
+            df.at[index, 'Applied_Target_Width'] = target_width
+            df.at[index, 'Applied_Target_Height'] = target_height
             df.at[index, result_column] = s3_url
             
             # Count different types of results
             if status.startswith("UPLOADED") or status.startswith("WOULD_UPLOAD"):
-                if status.startswith("WOULD_UPLOAD_EXISTS_403") or status.startswith("UPLOADED") and "403" in status:
+                if status.startswith("WOULD_UPLOAD_EXISTS_403") or (status.startswith("UPLOADED") and "403" in status):
                     reupload_count += 1
                 else:
                     uploaded_count += 1
+            elif status.startswith("OVERWRITTEN") or status.startswith("WOULD_OVERWRITE"):
+                reupload_count += 1
             elif status == "EXISTS_OK":
                 exists_count += 1
             else:
