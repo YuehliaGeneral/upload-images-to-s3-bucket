@@ -119,6 +119,8 @@ class CSVHandler:
 
     def get_row_target_dimensions(self, row: pd.Series) -> Tuple[int, int]:
         """Return row-specific target dimensions, falling back to config defaults."""
+        if self.config.for_delivero:
+            return self.config.target_width, self.config.target_height
         target_width = self.config.target_width
         target_height = self.config.target_height
 

@@ -5,8 +5,12 @@ Handles command line argument parsing and configuration management.
 """
 
 import argparse
+import os
+from pathlib import Path
 from dataclasses import dataclass
 from typing import Optional
+
+from dotenv import load_dotenv
 
 
 @dataclass
@@ -38,10 +42,12 @@ class Config:
     debug_dir: str
     test_mode: bool
     test_rows: int
+    for_delivero: bool = False
 
 
 def get_config() -> Config:
     """Parse command line arguments and merge with config.py defaults."""
+    load_dotenv(Path(__file__).with_name('.env'))
     parser = argparse.ArgumentParser(
         description='Unified Image Processor - Check and upload images to S3',
         formatter_class=argparse.RawTextHelpFormatter
@@ -94,6 +100,22 @@ def get_config() -> Config:
         default_test_rows = 5
         config_loaded = False
     
+    mode_value = os.getenv('FOR_DELIVERO', 'false').strip().lower()
+    if mode_value not in ('true', 'false'):
+        parser.error('FOR_DELIVERO must be true or false')
+    for_delivero = mode_value == 'true'
+    deliveroo_settings = {
+        'bucket_name': 'deliveroo-bucket-yjh5p6',
+        'aws_region': 'ap-south-1',
+        'target_width': 1200,
+        'target_height': 800,
+        'fit_mode': 'contain',
+        'key_prefix': '',
+        'key_suffix': '',
+        'source_column': 'Thumbnail image',
+        'result_column': 'Thumbnail image Deliveroo',
+    }
+
     # Add command line arguments
     parser.add_argument('--input-csv', '--input', 
                        default=default_input_csv,
@@ -215,8 +237,23 @@ def get_config() -> Config:
                        default=default_debug_dir,
                        help=f'Directory for debug images (default: {default_debug_dir})')
     
+    if for_delivero:
+        parser.set_defaults(
+            **deliveroo_settings,
+            input_csv='Delivero list - with thumbnails.csv',
+            output_csv='deliveroo-processed.csv',
+        )
+
     # Parse arguments
     args = parser.parse_args()
+    if for_delivero:
+        for name, expected in deliveroo_settings.items():
+            if getattr(args, name) != expected:
+                parser.error(
+                    f'FOR_DELIVERO=true requires --{name.replace("_", "-")} '
+                    f'to be {expected!r}; set FOR_DELIVERO=false for custom settings'
+                )
+    print(f'FOR_DELIVERO: {for_delivero}')
     
     # Print configuration source
     if config_loaded:
@@ -245,6 +282,7 @@ def get_config() -> Config:
     
     # Return configuration object
     return Config(
+        for_delivero=for_delivero,
         input_csv=args.input_csv,
         output_csv=args.output_csv,
         bucket_name=args.bucket_name,
