@@ -5,6 +5,7 @@ Handles image downloading, processing, cropping, and resizing operations.
 """
 
 import os
+import math
 import logging
 from io import BytesIO
 from typing import Optional
@@ -42,7 +43,7 @@ class ImageProcessor:
         ]
         return os.path.join(self.config.backup_dir, *safe_parts)
     
-    def center_crop_image(self, img: Image.Image, target_width: int, target_height: int) -> Image.Image:
+    def contain_image(self, img: Image.Image, target_width: int, target_height: int) -> Image.Image:
         """Resize image to fit within target dimensions with white background, no crop.
         
         Args:
@@ -67,6 +68,29 @@ class ImageProcessor:
         paste_y = (target_height - new_height) // 2
         new_img.paste(resized_img, (paste_x, paste_y))
         return new_img
+
+    def center_crop_image(self, img: Image.Image, target_width: int, target_height: int) -> Image.Image:
+        """Backward-compatible alias for the existing contain behavior."""
+        return self.contain_image(img, target_width, target_height)
+
+    def cover_crop_image(self, img: Image.Image, target_width: int, target_height: int) -> Image.Image:
+        """Resize image to fill target dimensions, then center-crop overflow."""
+        img_ratio = img.width / img.height
+        target_ratio = target_width / target_height
+
+        if img_ratio > target_ratio:
+            new_height = target_height
+            new_width = math.ceil(target_height * img_ratio)
+        else:
+            new_width = target_width
+            new_height = math.ceil(target_width / img_ratio)
+
+        resized_img = img.resize((new_width, new_height), Image.LANCZOS)
+        left = (new_width - target_width) // 2
+        top = (new_height - target_height) // 2
+        right = left + target_width
+        bottom = top + target_height
+        return resized_img.crop((left, top, right, bottom))
     
     def process_image_from_url(
         self,
@@ -103,7 +127,12 @@ class ImageProcessor:
             output_height = target_height or self.config.target_height
 
             img = Image.open(BytesIO(response.content)).convert('RGB')
-            img = self.center_crop_image(img, output_width, output_height)
+            if self.config.fit_mode == 'cover':
+                img = self.cover_crop_image(img, output_width, output_height)
+            elif self.config.fit_mode == 'contain':
+                img = self.contain_image(img, output_width, output_height)
+            else:
+                raise ValueError(f"Unsupported fit mode: {self.config.fit_mode}")
 
             if self.config.debug_save and debug_filename:
                 debug_path = os.path.join(self.config.debug_dir, debug_filename)

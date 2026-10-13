@@ -178,6 +178,11 @@ def main():
     logger.info(f"Output CSV: {config.output_csv}")
     logger.info(f"S3 Bucket: {config.bucket_name}")
     logger.info(f"Target Dimensions: {config.target_width}x{config.target_height}")
+    logger.info(f"Fit Mode: {config.fit_mode}")
+    logger.info(f"Key Prefix: {config.key_prefix!r}")
+    logger.info(f"Key Suffix: {config.key_suffix!r}")
+    logger.info(f"Configured Source Column: {config.source_column!r}")
+    logger.info(f"Configured Result Column: {config.result_column!r}")
     logger.info(f"Dry Run Mode: {config.dry_run}")
     logger.info(f"Overwrite Existing: {config.overwrite_existing}")
     logger.info(f"Backup Originals: {config.backup_originals}")
@@ -202,6 +207,8 @@ def main():
     # Load data
     try:
         df, url_column, result_column = csv_handler.load_data()
+        logger.info(f"Resolved Source Column: {url_column}")
+        logger.info(f"Resolved Result Column: {result_column}")
     except Exception as e:
         logger.error(f"Failed to load CSV data: {e}")
         return

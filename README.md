@@ -90,18 +90,33 @@ python3 main.py --target-width 800 --target-height 600 --dry-run
 python3 main.py --test-mode --test-rows 1 --output "quick-test.csv"
 ```
 
+### Snoono 1080x720 Cover Workflow
+
+```bash
+# Dry run: process only the first row, save a debug image, do not upload
+python3 main.py --input "snoono.csv" --output "snoono-cover-1080x720-dry-run.csv" --bucket-name "deliveroo-bucket-yjh5p6" --aws-region "ap-south-1" --source-column "Thumbnail 1000x1000" --result-column "Cover 1080x720 3:2" --target-width 1080 --target-height 720 --fit-mode contain --key-prefix "wp-content-snoonu" --key-suffix=-cover-1080x720 --dry-run --test-mode --test-rows 1 --debug-save --debug-dir "debug-cover-1080x720" --no-backup-originals --overwrite-existing
+
+# Production: process the whole file and upload to S3
+python3 main.py --input "snoono.csv" --output "snoono-cover-1080x720-uploaded.csv" --bucket-name "deliveroo-bucket-yjh5p6" --aws-region "ap-south-1" --source-column "Thumbnail 1000x1000" --result-column "Cover 1080x720 3:2" --target-width 1080 --target-height 720 --fit-mode contain --key-prefix "wp-content-snoonu" --key-suffix=-cover-1080x720 --no-dry-run --no-test-mode --no-debug-save --no-backup-originals --overwrite-existing
+```
+
 ## Configuration Options
 
 ### CLI Arguments (Recommended)
 
 | CLI Argument      | Short      | Description                     | Default                                     |
 | ----------------- | ---------- | ------------------------------- | ------------------------------------------- |
-| `--input-csv`     | `--input`  | Input CSV file path             | `'yuhila - missing images.csv'`             |
-| `--output-csv`    | `--output` | Output CSV file path            | `'yuhila - missing images - processed.csv'` |
+| `--input-csv`     | `--input`  | Input CSV file path             | `'export.csv'`                              |
+| `--output-csv`    | `--output` | Output CSV file path            | `'export-processed.csv'`                    |
 | `--bucket-name`   | `--bucket` | S3 bucket name                  | `'deliveroo-bucket-yjh5p6'`                 |
 | `--aws-region`    | `--region` | AWS region                      | `'ap-south-1'`                              |
-| `--target-width`  |            | Target image width              | `1200`                                      |
-| `--target-height` |            | Target image height             | `800`                                       |
+| `--target-width`  |            | Target image width              | `768`                                       |
+| `--target-height` |            | Target image height             | `768`                                       |
+| `--fit-mode`      |            | `cover` crops to fill; `contain` pads to fit | `'contain'`                    |
+| `--key-prefix`    |            | Root prefix for generated S3 keys | `''`                                      |
+| `--key-suffix`    |            | Suffix appended before generated `.jpg` extension | `''`                         |
+| `--source-column` |            | CSV column to read source image URLs from | auto-detect                         |
+| `--result-column` | `--destination-column` | CSV column to write uploaded S3 URLs into | auto-detect          |
 | `--dry-run`       |            | Simulate operations (safe mode) | `True`                                      |
 | `--no-dry-run`    | `--upload` | Actually upload to S3           |                                             |
 | `--test-mode`     |            | Process only first N rows       | `False`                                     |
@@ -117,9 +132,11 @@ Default values are stored in `config.py` and can be overridden by CLI arguments.
 
 ## CSV Input Requirements
 
-Your CSV file must contain one of these columns:
+Your CSV file must contain the column passed with `--source-column`, or one of these auto-detected columns:
 
+- `Thumbnail 1000x1000`
 - `WOO IMAGE` (from your current file)
+- `thumbnail_url_bucket`
 - `s3_url`
 - `image_url`
 - `url`

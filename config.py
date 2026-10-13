@@ -7,13 +7,21 @@ INPUT_CSV = 'export.csv'
 OUTPUT_CSV = 'export-processed.csv'
 
 # AWS S3 Settings
-BUCKET_NAME = 'bucket-p67ztf'
+BUCKET_NAME = 'deliveroo-bucket-yjh5p6'
 AWS_REGION = 'ap-south-1'
 
 # Image Processing Settings
 # Rows with target_width/target_height columns override these defaults.
 TARGET_WIDTH = 768
 TARGET_HEIGHT = 768
+FIT_MODE = 'contain'  # 'contain' keeps full image with padding; 'cover' crops to fill
+KEY_PREFIX = ''
+KEY_SUFFIX = ''
+
+# CSV Column Settings
+# Leave as None to use the legacy auto-detection behavior.
+SOURCE_COLUMN = None
+RESULT_COLUMN = None
 
 # Safety Settings (DEFAULTS - can override with CLI)
 DRY_RUN = True  # Default to safe mode - use --no-dry-run to upload

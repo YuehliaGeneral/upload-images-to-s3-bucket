@@ -23,6 +23,11 @@ class Config:
     # Image processing settings
     target_width: int
     target_height: int
+    fit_mode: str
+    key_prefix: str
+    key_suffix: str
+    source_column: Optional[str]
+    result_column: Optional[str]
     
     # Mode settings
     dry_run: bool
@@ -51,6 +56,11 @@ def get_config() -> Config:
             AWS_REGION as default_aws_region,
             TARGET_WIDTH as default_target_width,
             TARGET_HEIGHT as default_target_height,
+            FIT_MODE as default_fit_mode,
+            KEY_PREFIX as default_key_prefix,
+            KEY_SUFFIX as default_key_suffix,
+            SOURCE_COLUMN as default_source_column,
+            RESULT_COLUMN as default_result_column,
             DRY_RUN as default_dry_run,
             OVERWRITE_EXISTING as default_overwrite_existing,
             BACKUP_ORIGINALS as default_backup_originals,
@@ -69,6 +79,11 @@ def get_config() -> Config:
         default_aws_region = 'ap-south-1'
         default_target_width = 1200
         default_target_height = 800
+        default_fit_mode = 'contain'
+        default_key_prefix = ''
+        default_key_suffix = ''
+        default_source_column = None
+        default_result_column = None
         default_dry_run = True
         default_overwrite_existing = False
         default_backup_originals = False
@@ -103,6 +118,47 @@ def get_config() -> Config:
     parser.add_argument('--target-height', type=int,
                        default=default_target_height,
                        help=f'Target image height (default: {default_target_height})')
+
+    parser.add_argument('--fit-mode',
+                       choices=['cover', 'contain'],
+                       default=default_fit_mode,
+                       help=(
+                           "Image fit mode: 'cover' fills the target and center-crops; "
+                           "'contain' fits the whole image on a white canvas "
+                           f"(default: {default_fit_mode})"
+                       ))
+
+    parser.add_argument('--key-suffix',
+                       default=default_key_suffix,
+                       help=(
+                           "Suffix to append before the generated .jpg extension, "
+                           "for example -cover-1080x720 "
+                           f"(default: {default_key_suffix!r})"
+                       ))
+
+    parser.add_argument('--key-prefix',
+                       default=default_key_prefix,
+                       help=(
+                           "Root prefix for generated S3 keys. For wp-content URLs, "
+                           "this replaces the wp-content root, for example "
+                           "wp-content-snoonu "
+                           f"(default: {default_key_prefix!r})"
+                       ))
+
+    parser.add_argument('--source-column',
+                       default=default_source_column,
+                       help=(
+                           "CSV column to read image URLs from "
+                           f"(default: auto-detect; config: {default_source_column!r})"
+                       ))
+
+    parser.add_argument('--result-column', '--destination-column',
+                       dest='result_column',
+                       default=default_result_column,
+                       help=(
+                           "CSV column to write uploaded S3 URLs into "
+                           f"(default: auto-detect; config: {default_result_column!r})"
+                       ))
     
     # Mode arguments
     mode_group = parser.add_mutually_exclusive_group()
@@ -171,6 +227,15 @@ def get_config() -> Config:
     # Print current settings
     print(f"⚠️  DRY_RUN mode: {args.dry_run}")
     print(f"🔁 OVERWRITE_EXISTING mode: {args.overwrite_existing}")
+    print(f"🖼️  FIT_MODE: {args.fit_mode}")
+    if args.key_prefix:
+        print(f"📁 KEY_PREFIX: {args.key_prefix}")
+    if args.key_suffix:
+        print(f"🔑 KEY_SUFFIX: {args.key_suffix}")
+    if args.source_column:
+        print(f"📥 SOURCE_COLUMN: {args.source_column}")
+    if args.result_column:
+        print(f"📤 RESULT_COLUMN: {args.result_column}")
     if args.backup_originals:
         print(f"📦 BACKUP_ORIGINALS enabled: Will save originals to {args.backup_dir}")
     if args.test_mode:
@@ -186,6 +251,11 @@ def get_config() -> Config:
         aws_region=args.aws_region,
         target_width=args.target_width,
         target_height=args.target_height,
+        fit_mode=args.fit_mode,
+        key_prefix=args.key_prefix,
+        key_suffix=args.key_suffix,
+        source_column=args.source_column,
+        result_column=args.result_column,
         dry_run=args.dry_run,
         overwrite_existing=args.overwrite_existing,
         backup_originals=args.backup_originals,

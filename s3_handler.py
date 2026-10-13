@@ -59,6 +59,27 @@ class S3Handler:
         
         parsed = urlparse(str(url))
         return parsed.path.lstrip('/')
+
+    def apply_key_suffix(self, base: str, extension: str) -> str:
+        """Append the configured suffix before the extension."""
+        suffix = self.config.key_suffix or ''
+        if suffix and not base.endswith(suffix):
+            base = f"{base}{suffix}"
+        return f"{base}{extension}"
+
+    def apply_key_prefix(self, path: str) -> str:
+        """Apply a root prefix to generated keys while preserving hierarchy."""
+        normalized_path = path.lstrip('/')
+        prefix = (self.config.key_prefix or '').strip('/')
+
+        if not prefix:
+            return normalized_path
+
+        parts = normalized_path.split('/', 1)
+        if parts[0] == 'wp-content':
+            return f"{prefix}/{parts[1]}" if len(parts) > 1 else prefix
+
+        return f"{prefix}/{normalized_path}"
     
     def generate_s3_key(self, original_url: str) -> str:
         """Generate S3 key from original URL, converting to .jpg format.
@@ -73,19 +94,26 @@ class S3Handler:
             Exception: If key generation fails
         """
         try:
+            parsed_path = urlparse(str(original_url)).path
+
             # First try the wp-content approach from s3_image_processor.py
-            path_start = original_url.find('/wp-content/')
+            path_start = parsed_path.find('/wp-content/')
             if path_start != -1:
-                key_path = original_url[path_start:]
-                base, _ = os.path.splitext(key_path)
-                return (base.lstrip('/') + '.jpg')
-            
-            # Fallback to full path approach
-            path = self.extract_s3_path(original_url)
+                path = parsed_path[path_start:].lstrip('/')
+            else:
+                # Fallback to full path approach
+                path = self.extract_s3_path(original_url)
+
+            path = self.apply_key_prefix(path)
             base, ext = os.path.splitext(path)
+
             # Convert to .jpg if it's an image extension
             if ext.lower() in ['.png', '.jpeg', '.jpg', '.gif', '.webp']:
-                return base + '.jpg'
+                return self.apply_key_suffix(base, '.jpg')
+
+            if self.config.key_suffix:
+                return self.apply_key_suffix(path, '')
+
             return path
             
         except Exception as e:
@@ -143,6 +171,20 @@ class S3Handler:
                 if error_code == 404:
                     # Try next variation
                     continue
+                if error_code == 403:
+                    s3_url = f"https://{self.config.bucket_name}.s3.{self.config.aws_region}.amazonaws.com/{quote(attempt_key, safe='/')}"
+                    try:
+                        response = requests.head(s3_url, timeout=10)
+                        if response.status_code == 200:
+                            self.logger.info(f"S3 HeadObject forbidden, but public URL is accessible - {attempt_key}")
+                            return False, 200, "EXISTS_ACCESSIBLE_PUBLIC_ONLY", attempt_key
+                    except requests.RequestException:
+                        pass
+
+                    self.logger.warning(
+                        f"S3 HeadObject forbidden for {attempt_key}; treating as needing upload"
+                    )
+                    return True, 403, "HEAD_FORBIDDEN_NEEDS_UPLOAD", attempt_key
                 else:
                     self.logger.error(f"Unexpected S3 error for key {attempt_key}: {e}")
                     return True, error_code, f"S3_ERROR_{error_code}", attempt_key

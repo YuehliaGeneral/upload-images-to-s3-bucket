@@ -5,7 +5,7 @@ Handles CSV loading, encoding detection, column mapping, and result saving.
 """
 
 import logging
-from typing import Optional, List, Tuple
+from typing import Optional, Tuple
 
 import pandas as pd
 
@@ -58,7 +58,18 @@ class CSVHandler:
         Returns:
             Column name if found, None otherwise
         """
-        possible_columns = ['thumbnail_url_bucket', 'WOO IMAGE', 's3_url', 'image_url', 'url']
+        if self.config.source_column:
+            if self.config.source_column in df.columns:
+                self.logger.info(f"Using configured source column '{self.config.source_column}' for image URLs")
+                return self.config.source_column
+
+            self.logger.error(
+                f"Configured source column '{self.config.source_column}' was not found. "
+                f"Available columns: {list(df.columns)}"
+            )
+            return None
+
+        possible_columns = ['thumbnail_url_bucket', 'Thumbnail 1000x1000', 'WOO IMAGE', 's3_url', 'image_url', 'url']
         
         for col in possible_columns:
             if col in df.columns:
@@ -77,7 +88,11 @@ class CSVHandler:
         Returns:
             Column name to use for results
         """
-        result_column = 'NEW IMAGE' if 'NEW IMAGE' in df.columns else 'S3_URL'
+        if self.config.result_column:
+            result_column = self.config.result_column
+        else:
+            result_column = 'NEW IMAGE' if 'NEW IMAGE' in df.columns else 'S3_URL'
+
         self.logger.info(f"Will populate '{result_column}' column with S3 URLs")
         return result_column
     
@@ -159,7 +174,7 @@ class CSVHandler:
             Exception: If saving fails
         """
         try:
-            df.to_csv(self.config.output_csv, index=False)
+            df.to_csv(self.config.output_csv, index=False, encoding='utf-8')
             self.logger.info(f"Results saved to: {self.config.output_csv}")
         except Exception as e:
             self.logger.error(f"Failed to save results: {e}")
