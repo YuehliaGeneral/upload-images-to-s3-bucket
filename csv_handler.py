@@ -41,7 +41,8 @@ class CSVHandler:
         
         for encoding in encodings_to_try:
             try:
-                df = pd.read_csv(file_path, encoding=encoding)
+                options = {'dtype': str, 'keep_default_na': False} if self.config.for_delivero else {}
+                df = pd.read_csv(file_path, encoding=encoding, **options)
                 self.logger.info(f"Successfully loaded CSV using {encoding} encoding")
                 return df
             except UnicodeDecodeError:
@@ -106,11 +107,10 @@ class CSVHandler:
         Returns:
             DataFrame with initialized result columns
         """
-        df['S3_Key'] = ""
-        df['Processing_Status'] = ""
-        df['HTTP_Response_Code'] = ""
-        df['Applied_Target_Width'] = ""
-        df['Applied_Target_Height'] = ""
+        for column in ('S3_Key', 'Processing_Status', 'HTTP_Response_Code',
+                       'Applied_Target_Width', 'Applied_Target_Height'):
+            if not self.config.for_delivero or column not in df.columns:
+                df[column] = ""
         
         if result_column not in df.columns:
             df[result_column] = ""
@@ -149,7 +149,7 @@ class CSVHandler:
         self.logger.info(f"Columns: {list(df.columns)}")
         
         # Apply test mode if enabled
-        if self.config.test_mode:
+        if self.config.test_mode and not self.config.for_delivero:
             original_rows = len(df)
             df = df.head(self.config.test_rows)
             self.logger.info(f"🧪 TEST_MODE: Processing only first {len(df)} rows out of {original_rows}")
@@ -165,6 +165,17 @@ class CSVHandler:
         df = self.initialize_result_columns(df, result_column)
         
         return df, url_column, result_column
+
+    def rows_to_process(self, df: pd.DataFrame, result_column: str) -> pd.DataFrame:
+        """Select missing Deliveroo URLs while keeping the full output sheet."""
+        if not self.config.for_delivero:
+            return df
+        values = df[result_column]
+        pending = df[values.isna() | values.astype(str).str.strip().eq('')]
+        self.logger.info(f'Deliveroo: {len(pending)} missing URLs; {len(df) - len(pending)} filled rows preserved')
+        if self.config.test_mode:
+            pending = pending.head(self.config.test_rows)
+        return pending
     
     def save_results(self, df: pd.DataFrame) -> None:
         """Save processed results to CSV file.

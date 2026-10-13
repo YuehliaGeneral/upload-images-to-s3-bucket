@@ -25,7 +25,9 @@ AWS credentials need access to the destination bucket for object checks and uplo
 
 ## Deliveroo mode
 
-Set `FOR_DELIVERO=true`. The spelling is intentional. This mode selects:
+Set `FOR_DELIVERO=true`. The spelling is intentional. Only rows with a blank (including whitespace-only) `Thumbnail image Deliveroo` are processed. Filled rows are preserved without downloading or checking their images. The full sheet is saved to the output CSV, with verified upload links filled into that same column; the input file remains unchanged. Product identifiers retain leading zeros.
+
+This mode selects:
 
 | Setting | Value |
 | --- | --- |
@@ -52,7 +54,7 @@ env/bin/python main.py --dry-run --test-mode --test-rows 1 \
   --debug-save --output deliveroo-preview.csv
 ```
 
-Inspect `debug_images/` and `deliveroo-preview.csv`. Dry runs still check S3 and write the output CSV. Images are downloaded and processed when debug saving or original backups are enabled. Preview URLs show intended destinations, not proof of an upload.
+Test mode selects the first missing Deliveroo URL, retaining every row in the output. Inspect `debug_images/` and `deliveroo-preview.csv`. Dry runs still check S3 and write the output CSV. Images are downloaded and processed when debug saving or original backups are enabled. In Deliveroo mode, dry runs leave missing URL cells blank. Failed uploads or failed verification also leave them blank for retry.
 
 ### Upload all products
 

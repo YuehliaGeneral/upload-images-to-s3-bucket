@@ -3,6 +3,8 @@ import io
 import logging
 import os
 import unittest
+import tempfile
+from pathlib import Path
 from unittest.mock import patch
 
 import pandas as pd
@@ -44,6 +46,37 @@ class DeliverooModeTests(unittest.TestCase):
         self.assertEqual(key, 'wp-content/uploads/product.jpg')
         self.assertEqual(s3.get_s3_url(key), 'https://deliveroo-bucket-yjh5p6.s3.ap-south-1.amazonaws.com/wp-content/uploads/product.jpg')
         self.assertTrue(config.dry_run)
+
+    def test_missing_only_full_sheet_and_verified_links(self):
+        import main
+        for dry_run, status, expected in [
+            (False, 'UPLOADED_OK', 'https://bucket/new.jpg'),
+            (True, 'WOULD_UPLOAD_NOT_EXISTS', ''),
+            (False, 'UPLOADED_VERIFY_FAIL_403', ''),
+            (False, 'ERROR: download failed', ''),
+        ]:
+            with self.subTest(status=status), tempfile.TemporaryDirectory() as folder:
+                source = Path(folder) / 'input.csv'
+                output = Path(folder) / 'output.csv'
+                source.write_text('SKU,Thumbnail image,Thumbnail image Deliveroo\n'
+                                  '001,https://source/filled.jpg,https://bucket/existing.jpg\n'
+                                  '002,https://source/missing.jpg,\n'
+                                  '003,https://source/later.jpg,   \n')
+                config = self.config('true', '--input', str(source), '--output', str(output),
+                                     '--test-mode', '--test-rows', '1', '--no-backup-originals')
+                config.dry_run = dry_run
+                with patch('main.get_config', return_value=config), \
+                     patch('main.setup_logging', return_value=logging.getLogger('test')), \
+                     patch('main.S3Handler'), patch('main.ImageProcessor'), \
+                     patch('main.process_single_image', return_value=('key', status, 'https://bucket/new.jpg', 200)) as process, \
+                     contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                    main.main()
+                process.assert_called_once()
+                self.assertEqual(process.call_args.args[0], 'https://source/missing.jpg')
+                result = pd.read_csv(output, dtype=str, keep_default_na=False)
+                self.assertEqual(list(result['SKU']), ['001', '002', '003'])
+                self.assertEqual(list(result['Thumbnail image Deliveroo']),
+                                 ['https://bucket/existing.jpg', expected, '   '])
 
     def test_conflicting_overrides_rejected(self):
         for args in [('--target-width', '768'), ('--fit-mode', 'cover'), ('--key-prefix', 'wp-content-snoonu'), ('--key-suffix=-cover',), ('--source-column', 'other'), ('--result-column', 'other'), ('--bucket', 'other'), ('--region', 'other')]:

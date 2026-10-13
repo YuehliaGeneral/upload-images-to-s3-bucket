@@ -219,7 +219,8 @@ def main():
     reupload_count = 0
     error_count = 0
     
-    for index, row in tqdm(df.iterrows(), total=len(df), desc="Processing images"):
+    pending = csv_handler.rows_to_process(df, result_column)
+    for index, row in tqdm(pending.iterrows(), total=len(pending), desc="Processing images"):
         url = row[url_column]
         
         # Skip invalid or placeholder URLs
@@ -250,7 +251,11 @@ def main():
             df.at[index, 'HTTP_Response_Code'] = response_code
             df.at[index, 'Applied_Target_Width'] = target_width
             df.at[index, 'Applied_Target_Height'] = target_height
-            df.at[index, result_column] = s3_url
+            # Only verified destinations complete a missing Deliveroo URL.
+            if not config.for_delivero or (
+                not config.dry_run and status in ('UPLOADED_OK', 'OVERWRITTEN_OK', 'EXISTS_OK')
+            ):
+                df.at[index, result_column] = s3_url
             
             # Count different types of results
             if status.startswith("UPLOADED") or status.startswith("WOULD_UPLOAD"):
@@ -282,7 +287,7 @@ def main():
     logger.info("="*60)
     logger.info("PROCESSING SUMMARY")
     logger.info("="*60)
-    logger.info(f"Total images processed: {len(df)}")
+    logger.info(f"Total rows selected: {len(pending)} of {len(df)}")
     logger.info(f"Already existed and accessible: {exists_count}")
     logger.info(f"New uploads: {uploaded_count}")
     logger.info(f"Re-uploads (403/inaccessible): {reupload_count}")
